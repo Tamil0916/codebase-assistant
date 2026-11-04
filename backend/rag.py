@@ -5,6 +5,7 @@ from groq import Groq
 
 from vectorstore import load_index, search
 from hybrid import HybridSearcher
+from rerank import rerank
 
 load_dotenv()
 
@@ -22,7 +23,7 @@ Rules:
 MODES = {
     "ask": "Answer the developer's question about the codebase.",
     "summarize": "Summarize what the relevant code does: its purpose, its key functions or classes, and how they fit together.",
-    "debug": "The developer pasted an error or a problem description. Using the code in the context, explain the likely cause and suggest a fix. Say clearly when you are unsure.",
+        "debug": "The developer pasted an error or a problem description. Using the code in the context, explain the likely cause and suggest a fix. Quote the exact error message from the code if it appears in the context. If the code that raises this error is NOT in the context, say so plainly instead of attributing it to other code. Say clearly when you are unsure.",
 }
 
 
@@ -34,16 +35,18 @@ def is_test_file(path):
 _searcher = None
 
 
-def retrieve(query, index, chunks, k=6, include_tests=False):
+def retrieve(query, index, chunks, k=6, include_tests=False, use_rerank=True):
     global _searcher
     if _searcher is None:
         _searcher = HybridSearcher(index, chunks)
-    hits = _searcher.search(query, k=k * 4)
+    pool = _searcher.search(query, k=40)
     if not include_tests:
-        hits = [h for h in hits
+        pool = [h for h in pool
                 if not is_test_file(h[1]["metadata"]["file_path"])
                 and not h[1]["metadata"]["file_path"].endswith(".md")]
-    return hits[:k]
+    if use_rerank:
+        return rerank(query, pool[:30], k=k)
+    return pool[:k]
 
 
 def format_context(hits):
@@ -56,7 +59,10 @@ def format_context(hits):
 
 
 def answer(query, index, chunks, mode="ask", k=6, include_tests=False):
-    hits = retrieve(query, index, chunks, k=k, include_tests=include_tests)
+    hits = retrieve(query, index, chunks,
+                    k=8 if mode == "summarize" else k,
+                    include_tests=include_tests,
+                    use_rerank=(mode != "summarize"))
     context = format_context(hits)
 
     messages = [

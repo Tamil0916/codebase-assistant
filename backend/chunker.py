@@ -30,6 +30,37 @@ def node_start(node):
     return min(lines)
 
 
+def add_module_chunks(chunks, lines, path):
+    """Index code that sits outside any function/class (constants, messages, setup)."""
+    covered = set()
+    for c in chunks:
+        m = c["metadata"]
+        covered.update(range(m["start_line"], m["end_line"] + 1))
+
+    run = []
+
+    def flush():
+        while run and not lines[run[0] - 1].strip():
+            run.pop(0)
+        while run and not lines[run[-1] - 1].strip():
+            run.pop()
+        if run:
+            start, end = run[0], run[-1]
+            text = "\n".join(lines[start - 1:end])
+            body = [l for l in text.splitlines()
+                    if l.strip() and not l.lstrip().startswith(("import ", "from ", "#"))]
+            if body:  # skip chunks that are only imports/comments
+                chunks.append(make_chunk(text, path, "python", "(module-level)", start, end))
+        run.clear()
+
+    for i in range(1, len(lines) + 1):
+        if i in covered:
+            flush()
+        else:
+            run.append(i)
+    flush()
+
+
 def chunk_python(path, content):
     try:
         tree = ast.parse(content)
@@ -57,6 +88,9 @@ def chunk_python(path, content):
             add(node, node.name, end=header_end)
             for m in methods:
                 add(m, f"{node.name}.{m.name}")
+
+    # also index module-level code (constants, messages, setup code)
+    add_module_chunks(chunks, lines, path)
 
     # fall back if a file has no functions/classes (e.g. config or scripts)
     if not chunks and content.strip():
@@ -107,9 +141,14 @@ if __name__ == "__main__":
     chunks = chunk_repo(files, root)
     print(f"{len(files)} files -> {len(chunks)} chunks")
 
-    # show a few examples
-    for c in chunks[100:103]:
+    # show module-level chunks as a sanity check
+    shown = 0
+    for c in chunks:
         m = c["metadata"]
-        print("-" * 60)
-        print(f'{m["file_path"]}  [{m["symbol_name"]}]  lines {m["start_line"]}-{m["end_line"]}')
-        print(c["text"][:300])
+        if m["symbol_name"] == "(module-level)":
+            print("-" * 60)
+            print(f'{m["file_path"]}  [{m["symbol_name"]}]  lines {m["start_line"]}-{m["end_line"]}')
+            print(c["text"][:300])
+            shown += 1
+            if shown == 3:
+                break
