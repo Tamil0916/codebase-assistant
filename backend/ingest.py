@@ -1,13 +1,27 @@
 import os
 from git import Repo
+import shutil
+import stat
 
 SKIP_DIRS = {".git", "node_modules", "venv", "__pycache__", "dist", "build"}
 CODE_EXTS = {".py", ".js", ".ts", ".java", ".go", ".md"}
 
+def _force_remove(func, path, _exc):
+    # Windows marks git files read-only, so clear that flag and retry
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
 def clone_repo(url: str, dest: str = "repos/target") -> str:
+    if os.path.isdir(os.path.join(dest, ".git")):
+        return dest  # already cloned properly
     if os.path.exists(dest):
-        return dest
-    Repo.clone_from(url, dest)
+        shutil.rmtree(dest, onerror=_force_remove)  # leftover from a failed attempt
+    try:
+        Repo.clone_from(url, dest, depth=1)
+    except Exception:
+        shutil.rmtree(dest, onerror=_force_remove)  # don't leave a broken folder behind
+        raise
     return dest
 
 def load_code_files(root: str):
