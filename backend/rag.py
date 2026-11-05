@@ -19,6 +19,7 @@ Rules:
 - Answer ONLY using the code snippets provided in the context.
 - Cite every claim with its source in the form [file_path:start_line-end_line].
 - If the context does not contain the answer, say "I couldn't find that in the indexed code." Do not guess.
+- The context contains only the most relevant snippets, not the whole codebase. When asked to list, count or enumerate things, say "in the retrieved code" and never claim the list is complete.
 - Be concise and use short code excerpts only when they help."""
 
 MODES = {
@@ -80,7 +81,7 @@ def format_context(hits):
 def answer(query, searcher, mode="ask", k=6, include_tests=False):
     extra = expand_query(query) if mode == "ask" else ""
     hits = retrieve(query, searcher,
-                    k=8 if mode == "summarize" else k,
+                    k=8 if mode == "summarize" else (10 if mode == "ask" else k),
                     include_tests=include_tests,
                     use_rerank=(mode != "summarize"),
                     extra_terms=extra)

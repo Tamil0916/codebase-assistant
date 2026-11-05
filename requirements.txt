@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+streamlit
+requests
+pydantic
+python-dotenv
+groq
+gitpython
+faiss-cpu
+sentence-transformers
+rank-bm25
+langchain-text-splitters
