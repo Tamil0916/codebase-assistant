@@ -6,6 +6,7 @@ from groq import Groq
 from hybrid import HybridSearcher
 from rerank import rerank
 from vectorstore import load_index
+from rerank import rerank, rerank_fused
 
 load_dotenv()
 
@@ -31,9 +32,31 @@ def is_test_file(path):
     p = path.lower().replace("\\", "/")
     return "/tests/" in f"/{p}" or "/test_" in f"/{p}" or p.endswith("_test.py")
 
+def expand_query(query):
+    """Turn a vague question into identifiers/keywords likely to appear in source code."""
+    messages = [
+        {"role": "system", "content":
+            "Convert the developer's question about a codebase into 8-12 keywords "
+            "likely to appear in the source code that answers it: function names, "
+            "class names, decorators, identifiers. Output only the keywords, "
+            "separated by spaces. No explanation."},
+        {"role": "user", "content": query},
+    ]
+    for kwargs in ({"reasoning_effort": "low"}, {}):
+        try:
+            resp = client.chat.completions.create(
+                model=MODEL, messages=messages, temperature=0,
+                max_tokens=800, **kwargs)
+            text = (resp.choices[0].message.content or "").strip()
+            if text:
+                return text
+        except Exception as e:
+            print("expand_query failed:", type(e).__name__, e)
+    return ""
 
-def retrieve(query, searcher, k=6, include_tests=False, use_rerank=True):
-    pool = searcher.search(query, k=40)
+
+def retrieve(query, searcher, k=6, include_tests=False, use_rerank=True, extra_terms=""):
+    pool = searcher.search(f"{query} {extra_terms}".strip(), k=40)
     if not include_tests:
         pool = [h for h in pool
                 if not is_test_file(h[1]["metadata"]["file_path"])
@@ -41,7 +64,7 @@ def retrieve(query, searcher, k=6, include_tests=False, use_rerank=True):
     if not pool:
         return []
     if use_rerank:
-        return rerank(query, pool[:30], k=k)
+        return rerank_fused(query, pool[:30], k=k)
     return pool[:k]
 
 
@@ -55,10 +78,12 @@ def format_context(hits):
 
 
 def answer(query, searcher, mode="ask", k=6, include_tests=False):
+    extra = expand_query(query) if mode == "ask" else ""
     hits = retrieve(query, searcher,
                     k=8 if mode == "summarize" else k,
                     include_tests=include_tests,
-                    use_rerank=(mode != "summarize"))
+                    use_rerank=(mode != "summarize"),
+                    extra_terms=extra)
     if not hits:
         return "I couldn't find that in the indexed code.", []
 

@@ -1,7 +1,7 @@
 from vectorstore import load_index, search
 from hybrid import HybridSearcher
 from rag import is_test_file
-from rerank import rerank
+from rerank import rerank, rerank_fused
 
 # (question, acceptable symbol names)
 TESTS = [
@@ -61,7 +61,7 @@ if __name__ == "__main__":
             print(f"WARNING: none of {exp} found in the index (fix this test)")
 
     hybrid = HybridSearcher(index, chunks)
-    vec_ranks, hyb_ranks, rr_ranks = [], [], []
+    vec_ranks, hyb_ranks, rr_ranks, fused_ranks = [], [], [], []
 
     print()
     for q, exp in TESTS:
@@ -71,18 +71,22 @@ if __name__ == "__main__":
 
         pool = [(s, c) for s, c in hh if keep(c)][:30]
         r = [c for _, c in rerank(q, pool, k=len(pool))]
+        f = [c for _, c in rerank_fused(q, pool, k=len(pool))]
 
-        rv, rh, rr = first_rank(v, exp), first_rank(h, exp), first_rank(r, exp)
+        rv, rh = first_rank(v, exp), first_rank(h, exp)
+        rr, rf = first_rank(r, exp), first_rank(f, exp)
         vec_ranks.append(rv)
         hyb_ranks.append(rh)
         rr_ranks.append(rr)
-        print(f"vec={str(rv):5} hyb={str(rh):5} rerank={str(rr):5} {q}")
+        fused_ranks.append(rf)
+        print(f"vec={str(rv):5} hyb={str(rh):5} rerank={str(rr):5} fused={str(rf):5} {q}")
 
-        if rr is None:
-            top = [c["metadata"]["symbol_name"] for c in r[:4]]
-            print(f"      expected {exp}, got top: {top}")
+        if rf is None:
+            top = [c["metadata"]["symbol_name"] for c in f[:4]]
+            print(f"      fused missed {exp}, got top: {top}")
 
     print()
     report("vector-only", vec_ranks)
     report("hybrid", hyb_ranks)
     report("hyb+rerank", rr_ranks)
+    report("fused", fused_ranks)
