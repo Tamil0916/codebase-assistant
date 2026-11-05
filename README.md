@@ -103,6 +103,13 @@ Open http://localhost:8501, paste a GitHub URL in the sidebar and click **Index 
 
 Interactive docs at http://127.0.0.1:8000/docs.
 
+## Tests
+
+```bash
+python -m pytest tests -v     # chunker and URL-validation tests (no API key needed)
+python backend/evaluate.py    # retrieval quality on the Flask repo
+```
+
 ## Project structure
 
 ```
